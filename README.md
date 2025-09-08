@@ -152,14 +152,17 @@ AstrBot_plugin_gemini2.5image-openrouter/
 
 ## 开发信息
 
-- **作者**: 喵喵
-- **版本**: v1.5
+- **二改**: 薄暝
+- **原作者**: 喵喵
+- **原版本**: v1.6
 - **许可证**: 见 LICENSE 文件
-- **项目地址**: [GitHub Repository](https://github.com/miaoxutao123/AstrBot_plugin_gemini2point5image-openrouter)
+- **原项目地址**: [GitHub Repository](https://github.com/miaoxutao123/AstrBot_plugin_gemini2point5image-openrouter)
+- **现项目地址**: [GitHub Repository](https://github.com/xiaoxi68/AstrBot_plugin_gemini2point5image-command)
 
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request 来改进这个插件。
+非常感谢原作者喵喵的插件！
 
 ## 许可证
 
