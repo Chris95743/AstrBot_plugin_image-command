@@ -36,5 +36,12 @@
         "description": "（没特殊需求别改，仅当nap和bot不在一个服务器时填写，需配合文件接收脚本）NAP cat 所处服务器接收文件端口，在同一服务器上可以不填",
         "type": "int",
         "default": 3658
+    },
+    "calls_per_minute_per_group": {
+        "description": "每个QQ群每分钟允许调用次数上限（0 表示不限制）",
+        "type": "int",
+        "hint": "用于限制同一QQ群在一分钟内触发 /aiimg 和 /aiimg手办化 的次数，避免刷屏。",
+        "default": 5,
+        "obvious_hint": true
     }
 }
