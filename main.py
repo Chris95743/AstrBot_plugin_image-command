@@ -13,6 +13,8 @@ from math import ceil
 class MyPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
+        logger.info("Gemini2.5图像生成插件初始化开始")
+        
         # 支持多个API密钥
         self.openrouter_api_keys = config.get("openrouter_api_keys", [])
         # 向后兼容：如果还在使用旧的单个API密钥配置
@@ -36,6 +38,11 @@ class MyPlugin(Star):
         self.calls_per_minute_per_group = int(config.get("calls_per_minute_per_group", 5) or 5)
         self._rate_buckets = defaultdict(deque)  # key -> deque[timestamps]
         self._rate_lock = asyncio.Lock()
+
+        # 配置加载日志
+        api_key_count = len(self.openrouter_api_keys)
+        logger.info(f"配置加载完成 - API密钥数量: {api_key_count}, 模型: {self.model_name}, 频率限制: {self.calls_per_minute_per_group}次/分钟")
+        logger.info("插件初始化完成")
 
     def _group_key(self, event: AstrMessageEvent) -> str:
         """根据事件生成分组键：优先群ID，其次会话ID/发送者ID。"""
@@ -75,10 +82,13 @@ class MyPlugin(Star):
             if len(bucket) >= limit:
                 oldest = bucket[0]
                 wait = ceil(max(0, 60 - (now - oldest)))
+                logger.warning(f"频率限制触发 - {key}, 当前调用次数: {len(bucket)}/{limit}, 需等待{wait}秒")
                 return False, max(wait, 1), 0
-            bucket.append(now)
-            remaining = max(0, limit - len(bucket))
-            return True, 0, remaining
+            else:
+                bucket.append(now)
+                remaining = max(0, limit - len(bucket))
+                logger.debug(f"频率检查通过 - {key}, 剩余配额: {remaining}/{limit}")
+                return True, 0, remaining
 
     async def send_image_with_callback_api(self, image_path: str) -> Image:
         """
@@ -155,6 +165,9 @@ class MyPlugin(Star):
             - image_description (string): Description of the image to generate. Translate to English can be better.
             - use_reference_images (bool): Whether to use images from the user's message as reference. Default True.
         """
+        # 业务流程开始日志
+        logger.info(f"开始图像生成任务，描述长度: {len(image_description)}, 使用参考图片: {use_reference_images}")
+        
         openrouter_api_keys = self.openrouter_api_keys
         nap_server_address = self.nap_server_address
         nap_server_port = self.nap_server_port
@@ -220,6 +233,7 @@ class MyPlugin(Star):
             # 使用新的发送方法，优先使用callback_api_base
             image_component = await self.send_image_with_callback_api(image_path)
             chain = [image_component]
+            logger.info("图像生成任务完成")
             yield event.chain_result(chain)
             return
                 
@@ -243,6 +257,13 @@ class MyPlugin(Star):
     @filter.command("aiimg")
     async def aiimg(self, event: AstrMessageEvent, prompt: str = ""):
         """使用命令触发图片生成。示例：/aiimg 一只可爱的猫在草地上"""
+        # 记录指令触发日志
+        try:
+            user_name = event.get_sender_name()
+        except:
+            user_name = "未知用户"
+        logger.info(f"用户{user_name}触发/aiimg指令")
+        
         # 禁用默认 LLM 自动回复，避免与指令输出冲突
         try:
             event.should_call_llm(False)
@@ -276,7 +297,14 @@ class MyPlugin(Star):
     # 通过指令触发：/aiimg手办化
     @filter.command("aiimg手办化")
     async def aiimg_shouban(self, event: AstrMessageEvent):
-        """将参考图片“手办化”。用法：发送图片并输入 /aiimg手办化，或引用含图片的消息再输入指令。"""
+        """将参考图片"手办化"。用法：发送图片并输入 /aiimg手办化，或引用含图片的消息再输入指令。"""
+        # 记录指令触发日志
+        try:
+            user_name = event.get_sender_name()
+        except:
+            user_name = "未知用户"
+        logger.info(f"用户{user_name}触发/aiimg手办化指令")
+        
         # 禁用默认 LLM 自动回复
         try:
             event.should_call_llm(False)
