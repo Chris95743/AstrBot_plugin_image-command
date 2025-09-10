@@ -1,4 +1,4 @@
-# AstrBot Gemini 2.5 图像生成插件
+# AstrBot OpenAI 兼容 图像生成插件
 
 AstrBot 图像生成插件，默认使用 Google Gemini 2.5 Flash 模型免费生成高质量图像。
 
@@ -96,7 +96,7 @@ AstrBot 图像生成插件，默认使用 Google Gemini 2.5 Flash 模型免费�
 
 ### 支持的模型
 
-插件支持配置任何openai格式平台上可用的图像生成模型，包括但不限于：
+插件支持配置任何 openai 格式平台上可用的图像生成模型，包括但不限于：
 
 - `google/gemini-2.5-flash-image-preview:free`（默认免费模型）
 - `google/gemini-2.0-flash-exp:free`
