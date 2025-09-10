@@ -16,7 +16,7 @@
     "model_name": {
         "description": "使用的模型名称",
         "type": "string",
-        "hint": "OpenRouter 支持的图像生成模型，例如：google/gemini-2.5-flash-image-preview:free（默认免费模型）、google/gemini-2.0-flash-exp:free、openai/gpt-4o 等",
+        "hint": "图像生成模型，例如：google/gemini-2.5-flash-image-preview:free（默认免费模型）、google/gemini-2.0-flash-exp:free、openai/gpt-4o 等",
         "default": "google/gemini-2.5-flash-image-preview:free",
         "obvious_hint": true
     },
