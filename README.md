@@ -1,11 +1,11 @@
 # AstrBot Gemini 2.5 图像生成插件
 
-基于 OpenRouter API 的 AstrBot 图像生成插件，使用 Google Gemini 2.5 Flash 模型免费生成高质量图像。
+AstrBot 图像生成插件，默认使用 Google Gemini 2.5 Flash 模型免费生成高质量图像。
 
 ## 功能特点
 
-- 🎨 **免费图像生成**: 使用 OpenRouter 的免费 Gemini 2.5 Flash 模型
-- 🔧 **自定义模型支持**: 可配置使用任何 OpenRouter 平台支持的图像生成模型
+- 🎨 **图像生成**: 使用 openai 格式模型
+- 🔧 **自定义模型支持**: 可配置使用任何支持 openai 格式平台支持的图像生成模型
 - ️ **参考图片支持**: 支持基于用户提供的图片进行生成或修改
 - 🔑 **多 API 密钥支持**: 支持配置多个 API 密钥，自动轮换避免额度耗尽
 - ♻️ **智能重试机制**: 支持可配置的自动重试，提高请求成功率和稳定性
@@ -19,20 +19,18 @@
 
 ### 1. 获取 API Key
 
-前往 [OpenRouter](https://openrouter.ai/) 注册账号并获取 API Key。
-
 ### 2. 配置参数
 
 #### 通过 Web 界面配置（推荐）
 
 1. 访问 AstrBot 的 Web 管理界面
 2. 进入"插件管理"页面
-3. 找到"Gemini 2.5 Image OpenRouter"插件
+3. 找到"openai-image-command"插件
 4. 点击"配置"按钮进行可视化配置
 
 #### 配置参数说明
 
-- **openrouter_api_keys**: OpenRouter API 密钥列表（支持多个密钥自动轮换）
+- **openrouter_api_keys**: API 密钥列表（支持多个密钥自动轮换）
 - **model_name**: 使用的模型名称（默认：google/gemini-2.5-flash-image-preview:free）
 - **max_retry_attempts**: 每个 API 密钥的最大重试次数（默认：3 次，推荐 2-5 次）
 - **custom_api_base**: 自定义 API Base URL（可选，没有特殊需求别填）
@@ -42,12 +40,12 @@
 
 ## 使用方法
 
-### LLM 工具调用
+### /aiimg 命令调用
 
-插件注册了一个名为 `gemini-pic-gen` 的 LLM 工具，支持以下参数：
-
-- `image_description`: 图像生成或修改描述（必需）
-- `use_reference_images`: 是否使用用户消息中的图片作为参考（默认为 True）
+/aiimg 帮助 获取帮助
+/aiimg <描述> 根据文字描述生成图像，支持参考图片
+/aiimg 手办化 将参考图片转换为手办风格(模版 1)
+/aiimg 手办化 2 将参考图片转换为手办风格(模版 2)
 
 ### 智能重试机制
 
@@ -81,15 +79,15 @@
 ### 核心组件
 
 - **main.py**: 插件主要逻辑，继承自 AstrBot 的 Star 类
-- **utils/ttp.py**: OpenRouter API 调用和图像处理逻辑
+- **utils/ttp.py**: API 调用和图像处理逻辑
 - **utils/file_send_server.py**: 文件传输服务器通信
 
 ### 工作流程
 
 1. 接收用户的图像生成请求和可选的参考图片
 2. 根据 `use_reference_images` 参数决定是否使用参考图片
-3. 构建多模态请求消息（文本+图片）发送到 OpenRouter API
-4. 调用 Gemini 2.5 Flash 模型进行图像生成或修改
+3. 构建多模态请求消息（文本+图片）发送到服务器
+4. 调用用户选择的模型进行图像生成或修改
 5. 解析返回的 base64 图像数据
 6. 自动清理超过 15 分钟的历史图像文件
 7. 保存新生成的图像到本地文件系统
@@ -98,13 +96,13 @@
 
 ### 支持的模型
 
-插件支持配置任何 OpenRouter 平台上可用的图像生成模型，包括但不限于：
+插件支持配置任何openai格式平台上可用的图像生成模型，包括但不限于：
 
 - `google/gemini-2.5-flash-image-preview:free`（默认免费模型）
 - `google/gemini-2.0-flash-exp:free`
 - `openai/gpt-4o`
 - `anthropic/claude-3.5-sonnet`
-- 其他支持图像生成的 OpenRouter 模型
+- 其他支持图像生成的生图模型
 
 您可以在插件的配置文件中的 `model_name` 字段指定要使用的模型。
 
@@ -127,7 +125,7 @@ AstrBot_plugin_gemini2.5image-openrouter/
 
 插件包含完善的错误处理机制：
 
-- **API 调用失败处理**: 详细的 OpenRouter API 错误信息记录
+- **API 调用失败处理**: 详细的 API 错误信息记录
 - **Base64 图像解码错误处理**: 自动检测和修复格式问题
 - **参考图片处理异常捕获**: 当参考图片转换失败时的回退机制
 - **文件传输异常捕获**: 网络传输失败时的错误提示
@@ -136,7 +134,7 @@ AstrBot_plugin_gemini2.5image-openrouter/
 
 ## 版本信息
 
-- **当前版本**: v1.0
+- **当前版本**: v1.8
 - **更新内容**:
   - ✨ 新增智能重试机制，支持用户可配置的重试次数
   - 🔧 添加 Web 界面可视化配置支持
@@ -152,9 +150,9 @@ AstrBot_plugin_gemini2.5image-openrouter/
 
 ## 开发信息
 
-- **二改**: 薄暝
+- **二改作者**: 薄暝
 - **原作者**: 喵喵
-- **原版本**: v1.6
+- **版本**: v1.8
 - **许可证**: 见 LICENSE 文件
 - **原项目地址**: [GitHub Repository](https://github.com/miaoxutao123/AstrBot_plugin_gemini2point5image-openrouter)
 - **现项目地址**: [GitHub Repository](https://github.com/xiaoxi68/AstrBot_plugin_gemini2point5image-command)
