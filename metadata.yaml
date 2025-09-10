@@ -1,5 +1,5 @@
 name: openai-image-command # 这是你的插件的唯一识别名。
 desc: 修改自喵喵的openrouter生图插件。使用(默认openrouter)openai格式的免费api生成图片(使用astrbot命令调用插件) # 插件简短描述
-version: v1.8 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v1.9 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: 薄暝 # 作者
 repo: https://github.com/xiaoxi68/AstrBot_plugin_gemini2point5image-command # 插件的仓库地址

@@ -30,6 +30,8 @@ class Constants:
     ERROR_MSG_NO_DESCRIPTION = "请在指令后提供描述，例如：/aiimg 一只在草地上奔跑的柯基"
     ERROR_MSG_NO_IMAGE = "请先发送一张图片，或引用包含图片的消息后再使用指令：/aiimg手办化"
     ERROR_MSG_CONFIG_ERROR = "配置加载错误: {}"
+    ERROR_MSG_GROUP_NOT_ALLOWED = "此QQ群无权使用本插件。"
+    ERROR_MSG_GROUP_BLACKLISTED = "此QQ群已被禁止使用本插件。"
     
     # 手办化固定提示词
     SHOUBAN_PROMPT = (
@@ -123,9 +125,25 @@ class MyPlugin(Star):
             self._rate_buckets: Dict[str, Deque[float]] = defaultdict(deque)  # key -> deque[timestamps]
             self._rate_lock: asyncio.Lock = asyncio.Lock()
 
+            # QQ群访问控制配置
+            self.group_access_mode: str = config.get("group_access_mode", "disabled").lower().strip()
+            if self.group_access_mode not in ["disabled", "whitelist", "blacklist"]:
+                logger.warning(f"无效的群访问控制模式: {self.group_access_mode}，使用默认值 disabled")
+                self.group_access_mode = "disabled"
+            
+            # 群访问控制名单，确保为字符串列表
+            group_list_raw = config.get("group_access_list", [])
+            self.group_access_list: List[str] = []
+            if isinstance(group_list_raw, list):
+                for group_id in group_list_raw:
+                    if isinstance(group_id, (str, int)):
+                        self.group_access_list.append(str(group_id).strip())
+            
             # 配置加载日志
             api_key_count = len(self.openrouter_api_keys)
+            group_count = len(self.group_access_list) if self.group_access_mode != "disabled" else 0
             logger.info(f"配置加载完成 - API密钥数量: {api_key_count}, 模型: {self.model_name}, 频率限制: {self.calls_per_minute_per_group}次/分钟")
+            logger.info(f"群访问控制: {self.group_access_mode}, 名单数量: {group_count}")
             logger.info("插件初始化完成")
             
         except (ValueError, TypeError) as e:
@@ -157,6 +175,58 @@ class MyPlugin(Star):
         except Exception:
             sender = "unknown"
         return f"private:{sender}"
+
+    def _is_group_allowed(self, event: AstrMessageEvent) -> Tuple[bool, str, bool]:
+        """
+        检查当前群是否有权限使用插件
+        
+        Args:
+            event: 消息事件对象
+            
+        Returns:
+            Tuple[bool, str, bool]: (是否允许, 错误消息, 是否静默)
+                - 是否允许: True/False
+                - 错误消息: 给用户的提示信息
+                - 是否静默: True表示静默退出不响应，False表示返回错误消息
+        """
+        # 如果禁用了群访问控制，则允许所有群使用
+        if self.group_access_mode == "disabled":
+            return True, "", False
+        
+        # 获取群ID
+        group_id = None
+        try:
+            group_id = event.get_group_id()
+        except Exception:
+            # 如果不是群聊（私聊等），则允许使用
+            return True, "", False
+        
+        if not group_id:
+            # 不是群聊，允许使用
+            return True, "", False
+        
+        group_id_str = str(group_id).strip()
+        
+        # 白名单模式：只有在名单中的群才能使用
+        if self.group_access_mode == "whitelist":
+            if group_id_str in self.group_access_list:
+                logger.debug(f"群 {group_id_str} 在白名单中，允许使用")
+                return True, "", False
+            else:
+                logger.info(f"群 {group_id_str} 不在白名单中，拒绝使用")
+                return False, Constants.ERROR_MSG_GROUP_NOT_ALLOWED, False
+        
+        # 黑名单模式：在名单中的群不能使用（静默）
+        elif self.group_access_mode == "blacklist":
+            if group_id_str in self.group_access_list:
+                logger.info(f"群 {group_id_str} 在黑名单中，静默拒绝使用")
+                return False, "", True  # 静默模式，不返回任何消息
+            else:
+                logger.debug(f"群 {group_id_str} 不在黑名单中，允许使用")
+                return True, "", False
+        
+        # 未知模式，默认允许
+        return True, "", False
 
     async def _try_acquire_rate(self, event: AstrMessageEvent) -> Tuple[bool, int, int]:
         """尝试消耗一次配额。返回 (allowed: bool, wait_seconds: int, remaining: int)."""
@@ -329,6 +399,17 @@ class MyPlugin(Star):
         except Exception:
             pass
 
+        # 检查群访问权限
+        group_allowed, error_msg, is_silent = self._is_group_allowed(event)
+        if not group_allowed:
+            if is_silent:
+                # 静默模式，直接退出不响应
+                return
+            else:
+                # 非静默模式，返回错误消息
+                yield event.plain_result(error_msg)
+                return
+
         allowed, wait, remaining = await self._try_acquire_rate(event)
         if not allowed:
             yield event.plain_result(
@@ -388,6 +469,17 @@ class MyPlugin(Star):
         except Exception:
             pass
 
+        # 检查群访问权限
+        group_allowed, error_msg, is_silent = self._is_group_allowed(event)
+        if not group_allowed:
+            if is_silent:
+                # 静默模式，直接退出不响应
+                return
+            else:
+                # 非静默模式，返回错误消息
+                yield event.plain_result(error_msg)
+                return
+
         allowed, wait, remaining = await self._try_acquire_rate(event)
         if not allowed:
             yield event.plain_result(
@@ -438,6 +530,17 @@ class MyPlugin(Star):
         except Exception:
             pass
 
+        # 检查群访问权限
+        group_allowed, error_msg, is_silent = self._is_group_allowed(event)
+        if not group_allowed:
+            if is_silent:
+                # 静默模式，直接退出不响应
+                return
+            else:
+                # 非静默模式，返回错误消息
+                yield event.plain_result(error_msg)
+                return
+
         allowed, wait, remaining = await self._try_acquire_rate(event)
         if not allowed:
             yield event.plain_result(
@@ -487,6 +590,17 @@ class MyPlugin(Star):
             event.should_call_llm(False)
         except Exception:
             pass
+
+        # 检查群访问权限
+        group_allowed, error_msg, is_silent = self._is_group_allowed(event)
+        if not group_allowed:
+            if is_silent:
+                # 静默模式，直接退出不响应
+                return
+            else:
+                # 非静默模式，返回错误消息
+                yield event.plain_result(error_msg)
+                return
         
         # 直接返回帮助信息，不消耗API配额
         yield event.plain_result(Constants.HELP_MESSAGE)
