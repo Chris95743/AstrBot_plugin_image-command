@@ -6,6 +6,17 @@
         "default": ["API_Key_1", "API_Key_2"],
         "obvious_hint": true
     },
+    "provider": {
+        "description": "图像生成提供方",
+        "type": "string",
+        "hint": "选择后端：openrouter（默认）或 ark（字节 Ark 图像 API）",
+        "options": [
+            "openrouter",
+            "ark"
+        ],
+        "default": "openrouter",
+        "obvious_hint": true
+    },
     "custom_api_base": {
         "description": "自定义 API Base URL（可选，没有特殊需求别填）",
         "type": "string",
@@ -25,6 +36,69 @@
         "type": "int",
         "hint": "当API请求失败时，每个密钥最多重试几次。设置为1表示不重试，直接切换密钥。推荐2-5次，设置过高可能导致响应时间过长",
         "default": 3,
+        "obvious_hint": true
+    },
+    "ark_api_keys": {
+        "description": "Ark API 密钥列表（仅 provider=ark 生效）",
+        "type": "list",
+        "hint": "支持多个 Ark API Key 轮换，填写 Bearer 的 Key 值",
+        "default": [],
+        "obvious_hint": true
+    },
+    "ark_api_base": {
+        "description": "Ark API Base（仅 provider=ark 生效）",
+        "type": "string",
+        "hint": "一般无需修改，默认 https://ark.cn-beijing.volces.com",
+        "default": "https://ark.cn-beijing.volces.com",
+        "obvious_hint": false
+    },
+    "ark_model": {
+        "description": "Ark 模型名称（仅 provider=ark 生效）",
+        "type": "string",
+        "hint": "如 doubao-seedream-4-0-250828",
+        "default": "doubao-seedream-4-0-250828",
+        "obvious_hint": true
+    },
+    "ark_response_format": {
+        "description": "Ark 返回格式（仅 provider=ark 生效）",
+        "type": "string",
+        "hint": "建议使用 url",
+        "default": "url",
+        "obvious_hint": true
+    },
+    "ark_size": {
+        "description": "Ark 生成尺寸（仅 provider=ark 生效）",
+        "type": "string",
+        "hint": "如 2K、1024x1024 等",
+        "default": "2K",
+        "obvious_hint": true
+    },
+    "ark_stream": {
+        "description": "Ark 流式（仅 provider=ark 生效）",
+        "type": "bool",
+        "hint": "可选；本插件以普通请求处理",
+        "default": false,
+        "obvious_hint": false
+    },
+    "ark_watermark": {
+        "description": "Ark 水印（仅 provider=ark 生效）",
+        "type": "bool",
+        "hint": "是否启用水印",
+        "default": false,
+        "obvious_hint": false
+    },
+    "ark_sequential": {
+        "description": "Ark 连续生成策略（仅 provider=ark 生效）",
+        "type": "string",
+        "hint": "auto 或 off 等",
+        "default": "auto",
+        "obvious_hint": false
+    },
+    "ark_max_images": {
+        "description": "Ark 最大生成图片数（仅 provider=ark 生效）",
+        "type": "int",
+        "hint": "sequential_image_generation_options.max_images",
+        "default": 1,
         "obvious_hint": true
     },
     "nap_server_address": {
