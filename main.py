@@ -3,7 +3,9 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api.all import *
 from astrbot.core.message.components import Reply, Image, Plain
-from .utils.ttp import generate_image_openrouter
+import base64
+import aiofiles
+from .utils.ttp import generate_image_openrouter, generate_image_ark
 from .utils.file_send_server import send_file
 import asyncio, time
 from collections import defaultdict, deque
@@ -16,6 +18,7 @@ class Constants:
     DEFAULT_MODEL_NAME = "google/gemini-2.5-flash-image-preview:free"
     DEFAULT_MAX_RETRY_ATTEMPTS = 3
     DEFAULT_CALLS_PER_MINUTE_PER_GROUP = 5
+    DEFAULT_PROVIDER = "openrouter"  # openrouter | ark
     
     # 速率限制相关
     RATE_LIMIT_WINDOW_SECONDS = 60
@@ -32,14 +35,12 @@ class Constants:
     ERROR_MSG_CONFIG_ERROR = "配置加载错误: {}"
     ERROR_MSG_GROUP_NOT_ALLOWED = "此QQ群无权使用本插件。"
     ERROR_MSG_GROUP_BLACKLISTED = "此QQ群已被禁止使用本插件。"
+    ERROR_MSG_ARK_NO_KEY = "未配置 Ark API 密钥。"
+    ERROR_MSG_ARK_NO_KEY = "未配置 Ark API 密钥。"
     
     # 手办化固定提示词
     SHOUBAN_PROMPT = (
-        "将画面中的角色重塑为顶级收藏级树脂手办，全身动态姿势，置于角色主题底座；"
-        "高精度材质，手工涂装，肌肤纹理与服装材质真实分明。"
-        "戏剧性硬光为主光源，凸显立体感，无过曝；强效补光消除死黑，细节完整可见。"
-        "背景为窗边景深模糊，侧后方隐约可见产品包装盒。"
-        "博物馆级摄影质感，全身细节无损，面部结构精准。"
+        "将这张图片改成手办，调整到符合背景的大小和位置，细节丰富，真实展现，背景有手办包装盒与电脑桌面场景，后方电脑显示 3D 建模软件界面，呈现对应手办的设计稿，突出手办的造型、色彩，还原桌面摆放氛围 ，使用透明亚克力的圆型底座"
         "禁止：任何2D元素或照搬原图、塑料感、面部模糊、五官错位、细节丢失。"
     )
     
@@ -80,11 +81,11 @@ class ConfigError(PluginError):
     """配置相关错误"""
     pass
 
-@register("gemini-25-image-command", "薄暝", "修改自喵喵的openrouter生图插件。使用openai格式的免费api生成图片(使用astrbot命令调用插件)", "v1.8")
+@register("image-command", "喵喵/薄暝/Chris95743", "修改自薄暝修改自喵喵的openrouter生图插件。使用openai格式的免费api生成图片(使用astrbot命令调用插件)", "v1.8")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: Dict[str, Any]) -> None:
         super().__init__(context)
-        logger.info("Gemini2.5图像生成插件初始化开始")
+        logger.info("图像生成插件初始化开始")
         
         try:
             # 支持多个API密钥
@@ -100,6 +101,21 @@ class MyPlugin(Star):
             
             # 自定义API base支持
             self.custom_api_base: str = config.get("custom_api_base", "").strip()
+            
+            # 提供方与 Ark 相关配置
+            self.provider: str = (config.get("provider", Constants.DEFAULT_PROVIDER) or "openrouter").strip().lower()
+            self.ark_api_keys: List[str] = config.get("ark_api_keys", [])
+            self.ark_api_base: str = (config.get("ark_api_base") or "https://ark.cn-beijing.volces.com").strip()
+            self.ark_model: str = (config.get("ark_model") or "doubao-seedream-4-0-250828").strip()
+            self.ark_response_format: str = (config.get("ark_response_format") or "url").strip()
+            self.ark_size: str = (config.get("ark_size") or "2K").strip()
+            self.ark_stream: bool = bool(config.get("ark_stream", False))
+            self.ark_watermark: bool = bool(config.get("ark_watermark", True))
+            self.ark_sequential: str = (config.get("ark_sequential", "auto") or "auto").strip()
+            try:
+                self.ark_max_images: int = int(config.get("ark_max_images", 1) or 1)
+            except Exception:
+                self.ark_max_images = 1
             
             # 模型配置
             self.model_name: str = config.get("model_name", Constants.DEFAULT_MODEL_NAME).strip()
@@ -142,8 +158,10 @@ class MyPlugin(Star):
             # 配置加载日志
             api_key_count = len(self.openrouter_api_keys)
             group_count = len(self.group_access_list) if self.group_access_mode != "disabled" else 0
-            logger.info(f"配置加载完成 - API密钥数量: {api_key_count}, 模型: {self.model_name}, 频率限制: {self.calls_per_minute_per_group}次/分钟")
+            logger.info(f"配置加载完成 - Provider: {self.provider}, OpenRouter密钥: {api_key_count}, 模型: {self.model_name}, 频率限制: {self.calls_per_minute_per_group}次/分钟")
             logger.info(f"群访问控制: {self.group_access_mode}, 名单数量: {group_count}")
+            if self.provider == "ark":
+                logger.info(f"Ark 配置: base={self.ark_api_base}, model={self.ark_model}, response_format={self.ark_response_format}, size={self.ark_size}, stream={self.ark_stream}, watermark={self.ark_watermark}, seq={self.ark_sequential}, max_images={self.ark_max_images}, keys={len(self.ark_api_keys)}")
             logger.info("插件初始化完成")
             
         except (ValueError, TypeError) as e:
@@ -264,12 +282,20 @@ class MyPlugin(Star):
         callback_api_base = self.context.get_config().get("callback_api_base")
         if not callback_api_base:
             logger.info("未配置callback_api_base，使用本地文件发送")
-            return Image.fromFileSystem(image_path)
+            # 兼容性增强：优先尝试以 base64 方式发送，避免 file:/// 在异构部署下无法访问
+            try:
+                async with aiofiles.open(image_path, "rb") as f:
+                    img_bytes = await f.read()
+                b64 = base64.b64encode(img_bytes).decode()
+                return Image.fromBase64(b64)
+            except Exception as e:
+                logger.warning(f"base64 发送失败，退回本地文件发送: {e}")
+                return Image.fromFileSystem(image_path)
 
         logger.info(f"检测到配置了callback_api_base: {callback_api_base}")
         try:
             image_component = Image.fromFileSystem(image_path)
-            download_url = await image_component.convert_to_web_link()
+            download_url = await image_component.register_to_file_service()
             logger.info(f"成功生成下载链接: {download_url}")
             return Image.fromURL(download_url)
         except (IOError, OSError) as e:
@@ -303,27 +329,56 @@ class MyPlugin(Star):
         nap_server_port = self.nap_server_port
 
         # 根据参数决定是否使用参考图片
-        input_images = []
+        input_images = []  # base64 列表（用于 OpenRouter）
+        ark_image_urls: List[str] = []  # URL 列表（用于 Ark）
         if use_reference_images:
             # 从当前对话上下文中获取图片信息
             if hasattr(event, 'message_obj') and event.message_obj and hasattr(event.message_obj, 'message'):
                 for comp in event.message_obj.message:
                     if isinstance(comp, Image):
                         try:
+                            # OpenRouter 使用 base64；Ark 可尝试直接 URL（若可转换）
                             base64_data = await comp.convert_to_base64()
                             input_images.append(base64_data)
+                            # Ark 引用图：优先使用 callback 文件服务 URL；退化为组件内置 http url
+                            try:
+                                url = None
+                                # 优先注册到回调文件服务
+                                url = await comp.register_to_file_service()
+                                if url:
+                                    ark_image_urls.append(url)
+                                else:
+                                    raise Exception("no url from register_to_file_service")
+                            except Exception:
+                                # 回退：若 comp.url 是 http 则使用
+                                try:
+                                    if getattr(comp, 'url', '') and str(comp.url).startswith("http"):
+                                        ark_image_urls.append(comp.url)
+                                except Exception:
+                                    pass
                         except (IOError, ValueError, OSError) as e:
                             logger.warning(f"转换当前消息中的参考图片到base64失败: {e}")
                         except Exception as e:
                             logger.error(f"处理当前消息中的图片时出现未预期的错误: {e}")
                     elif isinstance(comp, Reply):
-                        # 处理引用消息中的图片获取逻辑
                         if comp.chain:
                             for reply_comp in comp.chain:
                                 if isinstance(reply_comp, Image):
                                     try:
                                         base64_data = await reply_comp.convert_to_base64()
                                         input_images.append(base64_data)
+                                        try:
+                                            url = await reply_comp.register_to_file_service()
+                                            if url:
+                                                ark_image_urls.append(url)
+                                            else:
+                                                raise Exception("no url from register_to_file_service")
+                                        except Exception:
+                                            try:
+                                                if getattr(reply_comp, 'url', '') and str(reply_comp.url).startswith("http"):
+                                                    ark_image_urls.append(reply_comp.url)
+                                            except Exception:
+                                                pass
                                         logger.info(f"从引用消息中获取到图片")
                                     except (IOError, ValueError, OSError) as e:
                                         logger.warning(f"转换引用消息中的参考图片到base64失败: {e}")
@@ -331,23 +386,41 @@ class MyPlugin(Star):
                                         logger.error(f"处理引用消息中的图片时出现未预期的错误: {e}")
                         else:
                             logger.debug("引用消息的chain为空，无法获取图片内容")
-            
-            # 记录使用的图片数量
+
             if input_images:
                 logger.info(f"使用了 {len(input_images)} 张参考图片进行图像生成")
             else:
                 logger.info("未找到参考图片，执行纯文本图像生成")
 
-        # 调用生成图像的函数
+        # 调用生成图像的函数（根据 provider 分支）
         try:
-            image_url, image_path = await generate_image_openrouter(
-                image_description,
-                openrouter_api_keys,
-                model=self.model_name,
-                input_images=input_images,
-                api_base=self.custom_api_base if self.custom_api_base else None,
-                max_retry_attempts=self.max_retry_attempts
-            )
+            if self.provider == "ark":
+                if not self.ark_api_keys:
+                    yield event.plain_result(Constants.ERROR_MSG_ARK_NO_KEY)
+                    return
+                image_url, image_path = await generate_image_ark(
+                    image_description,
+                    self.ark_api_keys,
+                    model=self.ark_model,
+                    image_urls=ark_image_urls,
+                    api_base=self.ark_api_base,
+                    response_format=self.ark_response_format,
+                    size=self.ark_size,
+                    stream=self.ark_stream,
+                    watermark=self.ark_watermark,
+                    sequential_image_generation=self.ark_sequential,
+                    max_images=self.ark_max_images,
+                    max_retry_attempts=self.max_retry_attempts
+                )
+            else:
+                image_url, image_path = await generate_image_openrouter(
+                    image_description,
+                    openrouter_api_keys,
+                    model=self.model_name,
+                    input_images=input_images,
+                    api_base=self.custom_api_base if self.custom_api_base else None,
+                    max_retry_attempts=self.max_retry_attempts
+                )
             
             if not image_url or not image_path:
                 # 生成失败，发送错误消息
