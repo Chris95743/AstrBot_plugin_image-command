@@ -1,5 +1,5 @@
-name: openai-image-command # 这是你的插件的唯一识别名。
-desc: 修改自喵喵的openrouter生图插件。使用openai格式的免费api生成图片(使用指令调用插件) # 插件简短描述
+name: image-command # 这是你的插件的唯一识别名。
+desc: 修改自薄暝修改自喵喵的openrouter生图插件。使用openai格式及火山云即梦4的免费api生成图片(使用astrbot命令调用插件) # 插件简短描述
 version: v1.9 # 插件版本号。格式：v1.1.1 或者 v1.1
-author: 薄暝 # 作者
-repo: https://github.com/xiaoxi68/AstrBot_plugin_openai_image-command # 插件的仓库地址
+author: 喵喵/薄暝/Chris95743 # 作者
+repo: https://github.com/Chris95743/AstrBot_plugin_image-command # 插件的仓库地址
