@@ -1,3 +1,5 @@
+新增了对[火山云即梦4](https://exp.volcengine.com/ark/vision?mode=vision&model=doubao-seedream-4-0-250828)的免费api的调用
+
 # AstrBot OpenAI 兼容 图像生成插件
 
 AstrBot 图像生成插件，默认使用 Google Gemini 2.5 Flash 模型免费生成高质量图像。
