@@ -462,6 +462,194 @@ async def generate_image(prompt, api_key, model="stabilityai/stable-diffusion-3-
     return None, None
 
 
+async def _download_image_to_file(session, image_url, prefix="ark_image"):
+    try:
+        async with session.get(image_url) as resp:
+            if resp.status != 200:
+                logger.error(f"下载图像失败: HTTP {resp.status} - {image_url}")
+                return None
+            content_type = resp.headers.get("Content-Type", "image/png")
+            # 猜测扩展名
+            if "/" in content_type:
+                ext = content_type.split("/")[-1].split(";")[0].strip()
+                if ext in ("jpeg", "jpg", "png", "webp", "gif"):
+                    image_ext = "jpg" if ext == "jpeg" else ext
+                else:
+                    image_ext = "png"
+            else:
+                image_ext = "png"
+
+            script_dir = Path(__file__).parent.parent
+            images_dir = script_dir / "images"
+            images_dir.mkdir(exist_ok=True)
+            await cleanup_old_images(script_dir)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            image_path = images_dir / f"{prefix}_{timestamp}_{unique_id}.{image_ext}"
+
+            async with aiofiles.open(image_path, "wb") as f:
+                await f.write(await resp.read())
+
+            await _state.update_saved_image(image_url, str(image_path))
+            logger.info(f"图像已下载: {image_url} -> {image_path}")
+            return str(image_path)
+    except Exception as e:
+        logger.error(f"下载图像异常: {e}")
+        return None
+
+
+async def generate_image_ark(
+    prompt,
+    api_keys,
+    model="doubao-seedream-4-0-250828",
+    image_urls=None,
+    api_base="https://ark.cn-beijing.volces.com",
+    response_format="url",
+    size="2K",
+    stream=False,
+    watermark=True,
+    sequential_image_generation="auto",
+    max_images=1,
+    max_retry_attempts=3
+):
+    """
+    Generate images via ByteDance Ark Images API (v3) with key rotation and retries.
+
+    Returns: tuple (first_image_url, first_image_local_path) or (None, None)
+    """
+    # 兼容传入单Key
+    if isinstance(api_keys, str):
+        api_keys = [api_keys]
+    if not api_keys:
+        logger.error("未提供 Ark API 密钥")
+        return None, None
+
+    url = f"{api_base.rstrip('/')}/api/v3/images/generations"
+    image_urls = image_urls or []
+
+    # 每个密钥进行多次重试
+    for api_attempt in range(len(api_keys)):
+        try:
+            current_api_key = await get_next_api_key(api_keys)
+            current_index = (_state.api_key_index % len(api_keys)) + 1
+
+            for retry_attempt in range(max_retry_attempts):
+                try:
+                    if retry_attempt > 0:
+                        delay = min(2 ** retry_attempt, 10)
+                        logger.info(f"Ark 密钥 #{current_index} 重试 {retry_attempt + 1}/{max_retry_attempts}，等待 {delay} 秒...")
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.info(f"尝试使用 Ark 密钥 #{current_index}")
+
+                    payload = {
+                        "model": model,
+                        "prompt": prompt,
+                        "response_format": response_format,
+                        "size": size,
+                        "watermark": bool(watermark),
+                        # Ark 示例字段
+                        "sequential_image_generation": sequential_image_generation,
+                        "sequential_image_generation_options": {
+                            "max_images": int(max_images) if max_images else 1
+                        }
+                    }
+                    if image_urls:
+                        payload["image"] = image_urls
+                    # Ark 支持 stream，但此处作为普通请求处理
+                    if stream:
+                        payload["stream"] = True
+
+                    headers = {
+                        "Authorization": f"Bearer {current_api_key}",
+                        "Content-Type": "application/json"
+                    }
+
+                    timeout = aiohttp.ClientTimeout(total=120)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(url, json=payload, headers=headers) as response:
+                            # 优先尝试解析 JSON
+                            data = None
+                            text_body = await response.text()
+                            try:
+                                data = await response.json()
+                            except Exception:
+                                # 不是纯 JSON，可能是流或错误文本
+                                data = None
+
+                            if response.status == 200:
+                                # 尝试从 data 或文本中提取 URL 列表
+                                urls = []
+                                if isinstance(data, dict):
+                                    # 常见结构尝试
+                                    if isinstance(data.get("data"), list):
+                                        for item in data["data"]:
+                                            if isinstance(item, dict) and "url" in item:
+                                                urls.append(item["url"])
+                                    elif isinstance(data.get("images"), list):
+                                        for item in data["images"]:
+                                            if isinstance(item, dict) and "url" in item:
+                                                urls.append(item["url"])
+                                            elif isinstance(item, str):
+                                                urls.append(item)
+                                    elif isinstance(data.get("output"), dict):
+                                        out = data["output"]
+                                        if isinstance(out.get("images"), list):
+                                            for u in out["images"]:
+                                                if isinstance(u, str):
+                                                    urls.append(u)
+                                # 兜底：从文本里用正则提取 http(s) URL
+                                if not urls and text_body:
+                                    url_pattern = r"https?://[^\s\"]+"
+                                    import re as _re
+                                    urls = _re.findall(url_pattern, text_body) or []
+
+                                if not urls:
+                                    logger.info("Ark API 调用成功，但未找到图像 URL")
+                                    return None, None
+
+                                # 下载首张图像保存
+                                first_url = urls[0]
+                                saved_path = await _download_image_to_file(session, first_url, prefix="ark_image")
+                                if saved_path:
+                                    return first_url, saved_path
+                                else:
+                                    # 下载失败不再重试当前响应
+                                    return None, None
+
+                            elif response.status in (429, 403):
+                                logger.warning(f"Ark 密钥 #{current_index} 额度或速率限制: HTTP {response.status}")
+                                break  # 切换密钥
+                            else:
+                                logger.warning(f"Ark API 错误 (重试 {retry_attempt + 1}/{max_retry_attempts}): HTTP {response.status} {text_body[:200]}")
+                                if retry_attempt == max_retry_attempts - 1:
+                                    logger.error(f"Ark 密钥 #{current_index} 达到最大重试次数")
+                                    break
+
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    logger.warning(f"Ark 网络请求失败 (密钥 #{current_index}, 重试 {retry_attempt + 1}/{max_retry_attempts}): {str(e)}")
+                    if retry_attempt == max_retry_attempts - 1:
+                        logger.error(f"Ark 密钥 #{current_index} 网络连接达到最大重试次数")
+                        break
+                except Exception as e:
+                    logger.error(f"调用 Ark API 异常 (密钥 #{current_index}, 重试 {retry_attempt + 1}/{max_retry_attempts}): {str(e)}")
+                    if retry_attempt == max_retry_attempts - 1:
+                        logger.error(f"Ark 密钥 #{current_index} 异常达到最大重试次数")
+                        break
+
+        except Exception as e:
+            logger.error(f"处理 Ark 密钥 #{current_index} 时发生异常: {str(e)}")
+
+        # 轮换密钥
+        if api_attempt < len(api_keys) - 1:
+            await rotate_to_next_api_key(api_keys)
+            logger.info("切换到下一个 Ark API 密钥")
+
+    logger.error("所有 Ark API 密钥与重试已耗尽")
+    return None, None
+
+
 if __name__ == "__main__":
     async def create_test_image_base64():
         """创建一个测试用的小图片的base64数据"""
